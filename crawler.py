@@ -1,9 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --quiet
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
 #   "requests<3",
-#   "click>=8.0"
+#   "click>=8.0",
+#   "mypy>=1.8"
 # ]
 # ///
 
@@ -12,8 +13,16 @@ import requests
 import re
 from collections import deque, defaultdict
 from urllib.parse import urljoin, urlparse
+from typing import TypedDict
 
-def crawl(start_url, max_depth=2, max_pages=20):
+class NodeMeta(TypedDict):
+    depth: int
+    title: str
+URL = str
+Graph = dict[URL, set[URL]]
+Nodes = dict[URL, NodeMeta]
+
+def crawl(start_url: URL, max_depth: int = 2, max_pages: int = 20) -> tuple[Graph, Nodes]:
     """BFS web crawler that returns graph and node metadata."""
     graph = {}
     nodes = {}
@@ -34,12 +43,20 @@ def crawl(start_url, max_depth=2, max_pages=20):
             title_match = re.search(r"<title>(.*?)</title>", html, re.I | re.S)
             title = title_match.group(1).strip() if title_match else "No title"
             
-            # Extract links
+            # Extract and filter links
             links = set()
             for href in re.findall(r'href=[\'"]?([^\'" >]+)', html, re.I):
                 full_url = urljoin(url, href).split("#")[0]
-                if full_url.startswith("http"):
-                    links.add(full_url)
+                
+                # Skip non-HTTP(S)
+                if not full_url.startswith(('http://', 'https://')):
+                    continue
+                
+                # Skip common non-HTML resources
+                if any(full_url.lower().endswith(ext) for ext in ('.jpg', '.png', '.css', '.js', '.svg', '.ico', '.pdf', '.woff')):
+                    continue
+
+                links.add(full_url)
         except Exception as e:
             print(f"Error: {url} - {e}")
             title, links = "Error", set()
@@ -59,7 +76,7 @@ def crawl(start_url, max_depth=2, max_pages=20):
 @click.argument('url')
 @click.option('--depth', '-d', default=2, help='Max depth')
 @click.option('--max-pages', '-m', default=20, help='Max pages')
-def main(url, depth, max_pages):
+def main(url: str, depth: int, max_pages: int) -> None:
     """Simple web crawler using BFS."""
     if not url.startswith(('http://', 'https://')):
         url = 'https://' + url
